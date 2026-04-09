@@ -26,21 +26,32 @@ function MapInteraction({ setPosition }) {
 
 const App = () => {
   const [image, setImage] = useState(null);
-  const [date, setDate] = useState('20 Mei 2022');
-  const [time, setTime] = useState('14.09.07');
+  // Set defaults to current local datetime
+  const [date, setDate] = useState(() => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().split('T')[0];
+  });
+  const [time, setTime] = useState(() => {
+    const d = new Date();
+    return d.toTimeString().substring(0, 5);
+  });
   
-  // Custom Data states according to reference
-  const [bearing, setBearing] = useState('286° W');
+  // Helper to format date "2026-04-09" -> "9 April 2026"
+  const formatDateID = (val) => {
+    if (!val) return "";
+    const parts = val.split('-');
+    if (parts.length !== 3) return val;
+    const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    return `${parseInt(parts[2], 10)} ${months[parseInt(parts[1], 10) - 1]} ${parts[0]}`;
+  };
+
   const [addressLines, setAddressLines] = useState({
     line1: 'Jalan Tanpa Nama',
     line2: 'Kecamatan Arjasa',
     line3: 'Kabupaten Jember',
     line4: 'Jawa Timur'
   });
-  
-  const [altitude, setAltitude] = useState('Altitude:234.2m');
-  const [speed, setSpeed] = useState('Speed:0.0km/h');
-  const [indexNum, setIndexNum] = useState('Index number: 47');
 
   const [position, setPosition] = useState({ lat: -8.112, lng: 113.822 });
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
@@ -84,7 +95,7 @@ const App = () => {
     if (image && canvasRef.current) {
       drawCanvas();
     }
-  }, [image, date, time, bearing, addressLines, altitude, speed, indexNum]);
+  }, [image, date, time, addressLines, position]);
 
   const loadImage = (src) => {
     return new Promise((resolve, reject) => {
@@ -94,6 +105,28 @@ const App = () => {
       img.onerror = (err) => reject(err);
       img.src = src;
     });
+  };
+
+  useEffect(() => {
+    // Attempt to get user's location on initial load
+    locateUser();
+  }, []);
+
+  const locateUser = () => {
+    if ("geolocation" in navigator) {
+      setIsLoadingAddress(true);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        },
+        (error) => {
+          console.error("Gagal mendapatkan lokasi GPS", error);
+          setIsLoadingAddress(false);
+          // Fallback to default if blocked, but avoid spamming alert
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
   };
 
   const drawCanvas = async () => {
@@ -109,32 +142,34 @@ const App = () => {
       // Draw background
       ctx.drawImage(bgImg, 0, 0);
       
-      const scale = Math.max(canvas.width, canvas.height) / 1000;
-      const padding = 30 * scale;
+      // Dynamic scale factors so elements are proportional to photo size
+      // We use base canvas dimension so width doesn't overpower height
+      const minDim = Math.min(canvas.width, canvas.height);
+      const widthScale = canvas.width / 1000;
+      const scale = minDim / 1000; 
+      const padding = 25 * scale;
 
       // 1. Draw Compass (Top-Left)
       const compassSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
         <circle cx="50" cy="50" r="45" fill="rgba(80,80,80,0.6)" stroke="#cccccc" stroke-width="8"/>
-        <text x="50" y="22" fill="white" font-size="12" font-family="Arial" font-weight="bold" text-anchor="middle">N</text>
-        <text x="80" y="54" fill="white" font-size="12" font-family="Arial" font-weight="bold" text-anchor="middle">E</text>
-        <text x="50" y="86" fill="white" font-size="12" font-family="Arial" font-weight="bold" text-anchor="middle">S</text>
-        <text x="20" y="54" fill="white" font-size="12" font-family="Arial" font-weight="bold" text-anchor="middle">W</text>
-        <polygon points="50,25 55,50 45,50" fill="#00aaff"/>
-        <polygon points="50,75 55,50 45,50" fill="gray"/>
+        <text x="50" y="24" fill="white" font-size="14" font-family="Arial" font-weight="bold" text-anchor="middle">N</text>
+        <text x="78" y="55" fill="white" font-size="14" font-family="Arial" font-weight="bold" text-anchor="middle">E</text>
+        <text x="50" y="86" fill="white" font-size="14" font-family="Arial" font-weight="bold" text-anchor="middle">S</text>
+        <text x="22" y="55" fill="white" font-size="14" font-family="Arial" font-weight="bold" text-anchor="middle">W</text>
+        <polygon points="50,22 55,50 45,50" fill="#00aaff"/>
+        <polygon points="50,78 55,50 45,50" fill="gray"/>
       </svg>`;
       const compassImg = await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(compassSvg)}`);
-      const compassSize = 130 * scale;
+      const compassSize = 120 * scale;
       ctx.drawImage(compassImg, padding, padding, compassSize, compassSize);
       
       // 2. Capture and draw Map (Bottom-Left)
+      // Limit map size to a maximum 35% of canvas width so it never overlaps the text
+      const mapSize = Math.min(260 * scale, canvas.width * 0.35); 
+      
       if (mapRef.current) {
-        // html2canvas captures the leaflet map element
-        const mapCanvas = await html2canvas(mapRef.current, { useCORS: true, allowTaint: true });
-        const mapSize = 250 * scale; // Large map block like reference
+        const mapCanvas = await html2canvas(mapRef.current, { useCORS: true, allowTaint: true, scale: 2 });
         ctx.drawImage(mapCanvas, padding, canvas.height - mapSize - padding, mapSize, mapSize);
-        
-        // Let's draw a small 'Google' watermark placeholder to mimic the vibe if needed
-        // (Just a text mimic, though the user asked for Google map real time, we emulate it)
       }
 
       // 3. Draw Stacked Texts (Bottom-Right)
@@ -142,40 +177,39 @@ const App = () => {
       ctx.textBaseline = "bottom";
       
       // Strong text shadow
-      ctx.shadowColor = "rgba(0, 0, 0, 0.9)";
-      ctx.shadowBlur = 4 * scale;
+      ctx.shadowColor = "rgba(0, 0, 0, 1)";
+      ctx.shadowBlur = 6 * scale;
       ctx.shadowOffsetX = 2 * scale;
       ctx.shadowOffsetY = 2 * scale;
 
-      let fontSize = 28 * scale;
+      let baseFontSize = 26 * scale;
       ctx.fillStyle = "#ffffff";
       
+      const formattedTime = time.replace(':', '.');
+      const coordinatesStr = `${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}`;
+      
       const lines = [
-        indexNum,
-        speed,
-        altitude,
         addressLines.line4,
         addressLines.line3,
         addressLines.line2,
         addressLines.line1,
-        bearing,
-        `${date} ${time}`
-      ];
+        coordinatesStr,
+        `${formatDateID(date)} ${formattedTime}`
+      ].filter(line => line && line.trim() !== ''); // Remove completely empty lines
 
       let currentY = canvas.height - padding;
       
       for (let i = 0; i < lines.length; i++) {
-        // First line (Date/Time) and Bearing are slightly larger or similar, let's keep all same font for elegance but match the visual hierarchy
-        if (i === 0 || i === 1 || i === 2) {
-          ctx.font = `500 ${22 * scale}px sans-serif`; // technical data is usually slightly smaller or standard
-        } else if (i === lines.length - 1 || i === lines.length - 2) {
-          ctx.font = `600 ${28 * scale}px sans-serif`; // date and bearing slightly prominent
+        if (i === lines.length - 1 || i === lines.length - 2) {
+          ctx.font = `600 ${baseFontSize * 1.15}px sans-serif`; 
         } else {
-          ctx.font = `500 ${26 * scale}px sans-serif`; // addresses
+          ctx.font = `500 ${baseFontSize}px sans-serif`; 
         }
         
-        ctx.fillText(lines[i], canvas.width - padding, currentY);
-        currentY -= (fontSize * 1.25);
+        // Using max-width constraint to prevent extremely long text from crossing over map
+        const maxTextWidth = canvas.width - mapSize - (padding * 3);
+        ctx.fillText(lines[i], canvas.width - padding, currentY, maxTextWidth > 0 ? maxTextWidth : undefined);
+        currentY -= (baseFontSize * 1.3);
       }
       
     } catch (e) {
@@ -212,7 +246,11 @@ const App = () => {
           </div>
 
           <div className="input-group">
-            <label>2. Pilih Lokasi (Klik atau Geser Peta) {isLoadingAddress && <span className="loading-badge">Mencari...</span>}</label>
+            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>2. Pilih Lokasi (Klik atau Geser Peta)</span>
+              {isLoadingAddress && <span className="loading-badge">Mencari...</span>}
+            </label>
+            <button className="secondary-btn" onClick={locateUser} style={{ marginBottom: '8px' }}>📍 Dapatkan Lokasi GPS Saya Saat Ini</button>
             {/* The Map Component */}
             <div className="map-picker-wrapper" ref={mapRef}>
                <MapContainer 
@@ -231,23 +269,23 @@ const App = () => {
                 <MapInteraction setPosition={setPosition} />
               </MapContainer>
             </div>
-            <button className="secondary-btn" onClick={forceRenderMapOnCanvas}>Refresh Render Peta ke Gambar</button>
+            <button className="secondary-btn" onClick={forceRenderMapOnCanvas} style={{ marginTop: '8px' }}>Refresh Render Peta ke Gambar</button>
           </div>
 
           <div className="row-group">
             <div className="input-group">
               <label>Tanggal</label>
-              <input type="text" value={date} onChange={e => setDate(e.target.value)} />
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} />
             </div>
             <div className="input-group">
               <label>Waktu</label>
-              <input type="text" value={time} onChange={e => setTime(e.target.value)} />
+              <input type="time" value={time} onChange={e => setTime(e.target.value)} />
             </div>
           </div>
 
           <div className="input-group">
-            <label>Arah (Bearing)</label>
-            <input type="text" value={bearing} onChange={e => setBearing(e.target.value)} />
+            <label>Titik Koordinat (Otomatis berdasarkan Peta)</label>
+            <input type="text" value={`${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}`} readOnly style={{backgroundColor: 'rgba(0,0,0,0.3)', color: '#94a3b8'}} />
           </div>
 
           <h3 className="section-title">Alamat Detil</h3>
@@ -256,22 +294,6 @@ const App = () => {
             <input type="text" value={addressLines.line2} onChange={e => setAddressLines({...addressLines, line2: e.target.value})} placeholder="Kecamatan" style={{marginTop: '8px'}} />
             <input type="text" value={addressLines.line3} onChange={e => setAddressLines({...addressLines, line3: e.target.value})} placeholder="Kota/Kabupaten" style={{marginTop: '8px'}} />
             <input type="text" value={addressLines.line4} onChange={e => setAddressLines({...addressLines, line4: e.target.value})} placeholder="Provinsi" style={{marginTop: '8px'}} />
-          </div>
-
-          <h3 className="section-title">Data Teknis</h3>
-          <div className="row-group">
-            <div className="input-group">
-              <label>Ketinggian</label>
-              <input type="text" value={altitude} onChange={e => setAltitude(e.target.value)} />
-            </div>
-            <div className="input-group">
-              <label>Kecepatan</label>
-              <input type="text" value={speed} onChange={e => setSpeed(e.target.value)} />
-            </div>
-          </div>
-          <div className="input-group">
-            <label>Nomor Indeks</label>
-            <input type="text" value={indexNum} onChange={e => setIndexNum(e.target.value)} />
           </div>
 
           <button className="primary-btn" onClick={() => {
