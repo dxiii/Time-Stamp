@@ -14,13 +14,19 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-// Component to handle clicks on the map
-function MapInteraction({ setPosition }) {
-  useMapEvents({
+// Component to handle map clicks and smooth panning
+function MapUpdater({ position, setPosition }) {
+  const map = useMapEvents({
     click(e) {
       setPosition(e.latlng);
     },
   });
+
+  useEffect(() => {
+    // Pan smoothly to the new position
+    map.flyTo([position.lat, position.lng], map.getZoom(), { animate: true, duration: 1.5 });
+  }, [position.lat, position.lng, map]);
+
   return null;
 }
 
@@ -266,7 +272,7 @@ const App = () => {
                   crossOrigin="anonymous"
                 />
                 <Marker position={[position.lat, position.lng]} />
-                <MapInteraction setPosition={setPosition} />
+                <MapUpdater position={position} setPosition={setPosition} />
               </MapContainer>
             </div>
             <button className="secondary-btn" onClick={forceRenderMapOnCanvas} style={{ marginTop: '8px' }}>Refresh Render Peta ke Gambar</button>
