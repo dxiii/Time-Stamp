@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import html2canvas from 'html2canvas';
 
@@ -21,6 +21,14 @@ function MapInteraction({ setPosition }) {
       setPosition(e.latlng);
     },
   });
+  return null;
+}
+
+function MapPanControl({ position }) {
+  const map = useMap();
+  useEffect(() => {
+    map.flyTo([position.lat, position.lng], map.getZoom(), { animate: true, duration: 1.5 });
+  }, [position.lat, position.lng, map]);
   return null;
 }
 
@@ -267,6 +275,7 @@ const App = () => {
                 />
                 <Marker position={[position.lat, position.lng]} />
                 <MapInteraction setPosition={setPosition} />
+                <MapPanControl position={position} />
               </MapContainer>
             </div>
             <button className="secondary-btn" onClick={forceRenderMapOnCanvas} style={{ marginTop: '8px' }}>Refresh Render Peta ke Gambar</button>
